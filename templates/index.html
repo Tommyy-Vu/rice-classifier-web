@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <h2>🌾 Ứng dụng học máy phân biệt gạo Việt Nam 🌾</h2>
+  <h2>🌾 Ứng dụng học máy phân biệt gạo Việt Nam bằng mô hình MobileNetV2 🌾</h2>
   <p>Tải ảnh gạo lên, ứng dụng sẽ dự đoán loại gạo và phân loại theo nguồn gốc.</p>
 
   <input id="fileinput" type="file" accept="image/*" />
@@ -69,7 +69,7 @@
       if (file) {
         const url = URL.createObjectURL(file);
         previewDiv.innerHTML = `<img src="${url}" alt="preview"/>`;
-        out.innerHTML = ""; // xóa kết quả cũ
+        out.innerHTML = "";
       }
     };
 
@@ -83,18 +83,32 @@
 
       try {
         const res = await fetch("/predict", { method: "POST", body: fd });
-        const json = await res.json();
+
+        // 🔒 Kiểm tra nếu response không hợp lệ
+        const text = await res.text();
+        if (!res.ok) {
+          out.innerHTML = `<b style="color:red;">Lỗi máy chủ:</b> ${res.status} - ${text}`;
+          return;
+        }
+
+        // 🔒 Parse JSON an toàn
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          out.innerHTML = `<b style="color:red;">Lỗi:</b> Phản hồi không hợp lệ từ máy chủ.`;
+          console.error("Server response:", text);
+          return;
+        }
 
         if (json.error) {
           out.innerHTML = `<b style="color:red;">Lỗi:</b> ${json.error}`;
           return;
         }
 
-        const group = (json.group || "").trim(); // group bằng tiếng Việt
-
+        const group = (json.group || "").trim();
         let html = "";
 
-        // chỉ hiện Dự đoán nếu KHÔNG phải "Không xác định"
         if (group && group !== "Không xác định") {
           html += `<div>Dự đoán: <b>${json.label}</b> (p=${json.prob})</div>`;
         }
@@ -108,7 +122,8 @@
         out.innerHTML = html;
 
       } catch (err) {
-        out.innerHTML = `<b style="color:red;">Lỗi:</b> ${err}`;
+        console.error(err);
+        out.innerHTML = `<b style="color:red;">Lỗi kết nối:</b> ${err.message}`;
       }
     };
   </script>
