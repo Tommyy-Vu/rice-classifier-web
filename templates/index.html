@@ -12,10 +12,7 @@
       background: #f9fafb;
       color: #222;
     }
-    h2 {
-      text-align: center;
-      color: #333;
-    }
+    h2 { text-align: center; color: #333; }
     input[type=file], button {
       display: block;
       margin: 16px 0;
@@ -28,9 +25,7 @@
       border-radius: 6px;
       cursor: pointer;
     }
-    button:hover {
-      background: #0056b3;
-    }
+    button:hover { background: #0056b3; }
     img {
       max-width: 300px;
       margin-top: 16px;
@@ -50,7 +45,7 @@
   </style>
 </head>
 <body>
-  <h2>🌾 Ứng dụng học máy phân biệt gạo Việt Nam bằng mô hình MobileNetV2 🌾</h2>
+  <h2>🌾 Ứng dụng học máy phân biệt gạo Việt Nam 🌾</h2>
   <p>Tải ảnh gạo lên, ứng dụng sẽ dự đoán loại gạo và phân loại theo nguồn gốc.</p>
 
   <input id="fileinput" type="file" accept="image/*" />
@@ -69,13 +64,16 @@
       if (file) {
         const url = URL.createObjectURL(file);
         previewDiv.innerHTML = `<img src="${url}" alt="preview"/>`;
-        out.innerHTML = "";
+        out.innerHTML = ""; // xóa kết quả cũ
       }
     };
 
     document.getElementById("btn").onclick = async () => {
       const f = fileInput.files[0];
-      if (!f) { alert("Vui lòng chọn ảnh trước."); return; }
+      if (!f) {
+        alert("Vui lòng chọn ảnh trước.");
+        return;
+      }
 
       const fd = new FormData();
       fd.append("file", f);
@@ -84,21 +82,13 @@
       try {
         const res = await fetch("/predict", { method: "POST", body: fd });
 
-        // 🔒 Kiểm tra nếu response không hợp lệ
+        // --- 🧠 Fix quan trọng: chỉ parse JSON nếu có thể ---
         const text = await res.text();
-        if (!res.ok) {
-          out.innerHTML = `<b style="color:red;">Lỗi máy chủ:</b> ${res.status} - ${text}`;
-          return;
-        }
-
-        // 🔒 Parse JSON an toàn
         let json;
         try {
           json = JSON.parse(text);
         } catch {
-          out.innerHTML = `<b style="color:red;">Lỗi:</b> Phản hồi không hợp lệ từ máy chủ.`;
-          console.error("Server response:", text);
-          return;
+          throw new Error("Server không trả về JSON hợp lệ: " + text.slice(0, 200));
         }
 
         if (json.error) {
@@ -113,17 +103,17 @@
           html += `<div>Dự đoán: <b>${json.label}</b> (p=${json.prob})</div>`;
         }
 
-        let group_class =
+        const groupClass =
           group === "Gạo Việt Nam" ? "group-vn" :
           group === "Gạo nước ngoài" ? "group-foreign" :
           "group-unknown";
 
-        html += `<div>Nhóm: <span class="${group_class}">${json.group}</span></div>`;
+        html += `<div>Nhóm: <span class="${groupClass}">${json.group}</span></div>`;
         out.innerHTML = html;
 
       } catch (err) {
-        console.error(err);
-        out.innerHTML = `<b style="color:red;">Lỗi kết nối:</b> ${err.message}`;
+        console.error("Fetch error:", err);
+        out.innerHTML = `<b style="color:red;">Lỗi:</b> ${err.message || err}`;
       }
     };
   </script>
