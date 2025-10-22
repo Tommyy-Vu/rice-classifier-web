@@ -1,3 +1,4 @@
+# app.py (Phiên bản đã sửa cho Hugging Face)
 import io, os
 from PIL import Image
 import torch
@@ -8,7 +9,7 @@ from flask import Flask, request, render_template, jsonify
 
 # --------- Cấu hình ---------
 MODEL_PATH = "mobilenetv2_model.pth"  # đặt cùng folder với app.py
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cpu") # <--- SỬA 1: Ép dùng CPU (vì HF Space Free không có GPU)
 THRESHOLD_UNKNOWN = 0.60  # nếu prob < threshold => "Không xác định"
 
 # --------- Tên lớp ---------
@@ -24,11 +25,15 @@ foreign_classes = {"Ipsala", "Arborio", "Karacadag", "Jasmine", "Basmati"}
 
 # --------- Load model ---------
 def load_model(model_path, num_classes=len(classes)):
-    model = models.mobilenet_v2(pretrained=False)
+    # <--- SỬA 2: Dùng tiêu chuẩn 'weights=None' thay vì 'pretrained=False'
+    model = models.mobilenet_v2(weights=None)
     model.classifier[1] = nn.Linear(model.last_channel, num_classes)
 
+    # <--- SỬA 3: Thêm kiểm tra file rõ ràng để debug
     if not os.path.exists(model_path):
-        raise FileNotFoundError(f"❌ Không tìm thấy file model: {model_path}")
+        error_msg = f"❌ LỖI NGHIÊM TRỌNG: Không tìm thấy file model tại: {model_path}"
+        print(error_msg)
+        raise FileNotFoundError(error_msg)
 
     state = torch.load(model_path, map_location=DEVICE)
     model.load_state_dict(state)
@@ -36,29 +41,21 @@ def load_model(model_path, num_classes=len(classes)):
     model.eval()
     return model
 
-# Cố gắng load model
-try:
-    model = load_model(MODEL_PATH)
-    print("✅ Model loaded successfully.")
-except Exception as e:
-    print("❌ Failed to load model:", e)
-    model = None
+print("Đang tải model...")
+model = load_model(MODEL_PATH)
+print("✅ Model đã tải thành công!")
 
-# --------- Transform ảnh ---------
+# --------- Xử lý ảnh ---------
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
 
-# --------- Hàm dự đoán ---------
+# --------- Dự đoán ---------
 def predict_image(img_bytes):
-    if model is None:
-        raise RuntimeError("Model chưa được load, vui lòng kiểm tra lại.")
-
     img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     x = transform(img).unsqueeze(0).to(DEVICE)
-
     with torch.no_grad():
         logits = model(x)
         probs = F.softmax(logits, dim=1).cpu().numpy()[0]
@@ -67,7 +64,7 @@ def predict_image(img_bytes):
     top_prob = float(probs[top_idx])
     label = classes[top_idx]
 
-    # Xác định nhóm
+    # Phân loại nhóm gạo
     if top_prob < THRESHOLD_UNKNOWN:
         group = "Không xác định"
         color = "gray"
@@ -92,41 +89,24 @@ def predict_image(img_bytes):
 # --------- Flask app ---------
 app = Flask(__name__, static_folder="static")
 
-# Trang chính
 @app.route("/")
 def index():
     return render_template("index.html")
 
-# API dự đoán
 @app.route("/predict", methods=["POST"])
 def predict():
+    if "file" not in request.files:
+        return jsonify({"error": "Không có file ảnh"}), 400
+    file = request.files["file"]
+    img_bytes = file.read()
     try:
-        if "file" not in request.files:
-            return jsonify({"error": "Không có file ảnh"}), 400
-
-        file = request.files["file"]
-        if file.filename == "":
-            return jsonify({"error": "Tên file rỗng"}), 400
-
-        img_bytes = file.read()
-        result = predict_image(img_bytes)
-        return jsonify(result), 200
-
+        res = predict_image(img_bytes)
+        return jsonify(res)
     except Exception as e:
-        print("⚠️ Error during prediction:", e)
+        print(f"⚠️ Lỗi khi dự đoán: {e}") # In lỗi ra log của HF
         return jsonify({"error": str(e)}), 500
 
-# --------- Bắt mọi lỗi Flask (để tránh trả về HTML) ---------
-@app.errorhandler(404)
-def not_found(e):
-    return jsonify({"error": "Đường dẫn không tồn tại (404)"}), 404
-
-@app.errorhandler(500)
-def internal_error(e):
-    return jsonify({"error": "Lỗi máy chủ (500)", "details": str(e)}), 500
-
-# --------- Chạy app ---------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    print(f"🚀 Flask server chạy tại http://127.0.0.1:{port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # Dòng này chỉ chạy khi bạn chạy local (python app.py)
+    # Khi deploy, Gunicorn sẽ chạy file này, không qua __main__
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
