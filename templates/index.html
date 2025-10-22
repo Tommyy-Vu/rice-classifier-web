@@ -12,7 +12,10 @@
       background: #f9fafb;
       color: #222;
     }
-    h2 { text-align: center; color: #333; }
+    h2 {
+      text-align: center;
+      color: #333;
+    }
     input[type=file], button {
       display: block;
       margin: 16px 0;
@@ -25,7 +28,9 @@
       border-radius: 6px;
       cursor: pointer;
     }
-    button:hover { background: #0056b3; }
+    button:hover {
+      background: #0056b3;
+    }
     img {
       max-width: 300px;
       margin-top: 16px;
@@ -39,9 +44,9 @@
       background: #fff;
       box-shadow: 0 1px 6px rgba(0,0,0,0.1);
     }
-    .group-vn { color: #00b33c; font-weight: bold; }       /* xanh lá */
-    .group-foreign { color: #007bff; font-weight: bold; }  /* xanh dương */
-    .group-unknown { color: #888; font-weight: bold; }     /* xám */
+    .group-vn { color: #00b33c; font-weight: bold; }      /* xanh lá */
+    .group-foreign { color: #007bff; font-weight: bold; } /* xanh dương */
+    .group-unknown { color: #888; font-weight: bold; }    /* xám */
   </style>
 </head>
 <body>
@@ -58,7 +63,6 @@
     const fileInput = document.getElementById("fileinput");
     const previewDiv = document.getElementById("preview");
     const out = document.getElementById("out");
-
     fileInput.onchange = () => {
       const file = fileInput.files[0];
       if (file) {
@@ -67,53 +71,48 @@
         out.innerHTML = ""; // xóa kết quả cũ
       }
     };
-
     document.getElementById("btn").onclick = async () => {
       const f = fileInput.files[0];
-      if (!f) {
-        alert("Vui lòng chọn ảnh trước.");
-        return;
-      }
-
+      if (!f) { alert("Vui lòng chọn ảnh trước."); return; }
       const fd = new FormData();
       fd.append("file", f);
-      out.innerHTML = "<i>Đang xử lý...</i>";
-
+      out.innerHTML = "<i>Đang xử lý... (CPU miễn phí có thể mất 1-2 phút)</i>"; // <--- SỬA NHỎ
       try {
         const res = await fetch("/predict", { method: "POST", body: fd });
-
-        // --- 🧠 Fix quan trọng: chỉ parse JSON nếu có thể ---
+        // --- (PHẦN SỬA ĐỂ CHỐNG LỖI) ---
+        // Đọc kết quả dưới dạng TEXT trước
         const text = await res.text();
         let json;
+        
         try {
+          // Thử chuyển text sang JSON
           json = JSON.parse(text);
-        } catch {
-          throw new Error("Server không trả về JSON hợp lệ: " + text.slice(0, 200));
+        } catch (e) {
+          // Nếu thất bại, nghĩa là server trả về HTML lỗi (ví dụ 502)
+          out.innerHTML = `<b style="color:red;">Lỗi:</b> Server không trả về JSON hợp lệ. Có thể server bị sập hoặc hết giờ.`;
+          console.error("Server response was not JSON:", text.slice(0, 200));
+          return;
         }
-
+        // --- (HẾT PHẦN SỬA) ---
         if (json.error) {
           out.innerHTML = `<b style="color:red;">Lỗi:</b> ${json.error}`;
           return;
         }
-
-        const group = (json.group || "").trim();
+        const group = (json.group || "").trim(); // group bằng tiếng Việt
         let html = "";
-
-        if (group && group !== "Không xác định") {
-          html += `<div>Dự đoán: <b>${json.label}</b> (p=${json.prob})</div>`;
+        // chỉ hiện Dự đoán nếu KHÔNG phải "Không xác định"
+        if (group && group !== "Không xácid") {
+          html += `<div>Dự đoán: <b>${json.label}</b> (Độ chính xác: ${(json.prob * 100).toFixed(2)}%)</div>`; // <--- SỬA NHỎ (hiện %)
         }
-
-        const groupClass =
+        let group_class =
           group === "Gạo Việt Nam" ? "group-vn" :
           group === "Gạo nước ngoài" ? "group-foreign" :
           "group-unknown";
-
-        html += `<div>Nhóm: <span class="${groupClass}">${json.group}</span></div>`;
+        html += `<div>Nhóm: <span class="${group_class}">${json.group}</span></div>`;
         out.innerHTML = html;
-
       } catch (err) {
-        console.error("Fetch error:", err);
-        out.innerHTML = `<b style="color:red;">Lỗi:</b> ${err.message || err}`;
+        // Lỗi này xảy ra nếu mạng bị ngắt
+        out.innerHTML = `<b style="color:red;">Lỗi Mạng:</b> ${err.message}`;
       }
     };
   </script>
